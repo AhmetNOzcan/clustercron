@@ -1,0 +1,18 @@
+# binaries
+/bin/
+clustercron
+
+# Go build cache
+*.exe
+*.out
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
