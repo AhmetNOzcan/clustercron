@@ -12,6 +12,7 @@ type Config struct {
 	HTTPPort    int
 	NodeID      string
 	LogLevel    string
+	Role        string
 }
 
 func Load() (*Config, error) {
@@ -20,6 +21,7 @@ func Load() (*Config, error) {
 		RedisURL:    os.Getenv("REDIS_URL"),
 		NodeID:      getEnvOrDefault("NODE_ID", hostnameOrRandom()),
 		LogLevel:    getEnvOrDefault("LOG_LEVEL", "info"),
+		Role:        getEnvOrDefault("ROLE", "all"),
 	}
 
 	port, err := getEnvAsInt("HTTP_PORT", 8080)
@@ -41,6 +43,12 @@ func (c *Config) validate() error {
 	}
 	if c.RedisURL == "" {
 		return fmt.Errorf("REDIS_URL is required")
+	}
+	switch c.Role {
+	case "all", "scheduler", "worker":
+		// valid
+	default:
+		return fmt.Errorf("ROLE must be 'all', 'scheduler', or 'worker' (got %q)", c.Role)
 	}
 	return nil
 }

@@ -1,7 +1,10 @@
-.PHONY: up down logs reset psql redis-cli
+.PHONY: build up-cluster down logs-scheduler logs-worker-1 logs-worker-2
 
-up:
-	docker compose up -d
+build:
+	docker compose build
+
+up-cluster:
+	docker compose up -d --build
 
 down:
 	docker compose down
@@ -9,8 +12,17 @@ down:
 logs:
 	docker compose logs -f
 
+logs-scheduler:
+	docker compose logs -f scheduler
+
+logs-worker-1:
+	docker compose logs -f worker-1
+
+logs-worker-2:
+	docker compose logs -f worker-2	
+
 reset:
-	docker compose down -v && docker compose up -d
+	docker compose down -v && docker compose up -d --build
 
 psql:
 	docker exec -it clustercron-postgres psql -U clustercron -d clustercron

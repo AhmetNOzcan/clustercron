@@ -29,6 +29,51 @@ services:
       timeout: 3s
       retries: 5
 
+  scheduler:
+    build: .
+    container_name: clustercron-scheduler
+    environment:
+      DATABASE_URL: postgres://clustercron:clustercron@postgres:5432/clustercron?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      ROLE: scheduler
+      NODE_ID: scheduler-1
+      HTTP_PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy      
+
+  worker-1:
+    build: .
+    container_name: clustercron-worker-1
+    environment:
+      DATABASE_URL: postgres://clustercron:clustercron@postgres:5432/clustercron?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      ROLE: worker
+      NODE_ID: worker-1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker-2:
+    build: .
+    container_name: clustercron-worker-2
+    environment:
+      DATABASE_URL: postgres://clustercron:clustercron@postgres:5432/clustercron?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      ROLE: worker
+      NODE_ID: worker-2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy        
+
 volumes:
   postgres_data:
   redis_data:
