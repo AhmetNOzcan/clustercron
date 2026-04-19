@@ -1,6 +1,7 @@
 package api
 
 import (
+	"clustercron/internal/heartbeat"
 	"clustercron/internal/schedule"
 	"clustercron/internal/storage"
 	"errors"
@@ -11,10 +12,14 @@ import (
 
 type Handler struct {
 	db *storage.DB
+	hb *heartbeat.Monitor
 }
 
-func NewHandler(db *storage.DB) *Handler {
-	return &Handler{db: db}
+func NewHandler(db *storage.DB, hb *heartbeat.Monitor) *Handler {
+	return &Handler{
+		db: db,
+		hb: hb,
+	}
 }
 
 func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
@@ -162,4 +167,16 @@ func (h *Handler) ListJobRuns(w http.ResponseWriter, r *http.Request) {
 }
 func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+func (h *Handler) ListWorkers(w http.ResponseWriter, r *http.Request) {
+	workers, err := h.hb.LiveWorkers(r.Context())
+	if err != nil {
+		log.Printf("ERROR list workers: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to list workers")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"workers": workers,
+		"count":   len(workers),
+	})
 }

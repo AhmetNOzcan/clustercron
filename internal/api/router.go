@@ -15,7 +15,7 @@ func NewRouter(h *Handler) *chi.Mux {
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/health", h.HealthCheck)
-
+		r.Get("/workers", h.ListWorkers)
 		r.Route("/jobs", func(r chi.Router) {
 			r.Post("/", h.CreateJob)
 			r.Get("/", h.ListJobs)

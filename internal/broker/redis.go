@@ -97,3 +97,10 @@ func (r *Redis) ScanKeys(ctx context.Context, pattern string) ([]string, error) 
 
 	return allKeys, nil
 }
+
+func (r *Redis) Delete(ctx context.Context, key string) error {
+	if err := r.client.Del(ctx, key).Err(); err != nil {
+		return fmt.Errorf("del %s: %w", key, err)
+	}
+	return nil
+}
