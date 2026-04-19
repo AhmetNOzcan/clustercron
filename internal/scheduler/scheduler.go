@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"clustercron/internal/broker"
 	"clustercron/internal/schedule"
 	"clustercron/internal/storage"
 	"clustercron/internal/worker"
@@ -11,14 +12,14 @@ import (
 
 type Scheduler struct {
 	db       *storage.DB
-	executor *worker.Executor
+	broker   *broker.Redis
 	interval time.Duration
 }
 
-func New(db *storage.DB, executor *worker.Executor) *Scheduler {
+func New(db *storage.DB, broker *broker.Redis) *Scheduler {
 	return &Scheduler{
 		db:       db,
-		executor: executor,
+		broker:   broker,
 		interval: 5 * time.Second,
 	}
 }
@@ -63,8 +64,28 @@ func (s *Scheduler) tick(ctx context.Context) {
 func (s *Scheduler) processJob(ctx context.Context, job *storage.Job) {
 	runID := worker.BuildRunID(job)
 
-	// Delegate execution to the executor.
-	s.executor.Execute(ctx, job, runID)
+	msg := &broker.JobMessage{
+		RunID:          runID,
+		JobID:          job.ID,
+		JobName:        job.Name,
+		WebhookURL:     job.WebhookURL,
+		HTTPMethod:     job.HTTPMethod,
+		TimeoutSeconds: job.TimeoutSeconds,
+		ScheduledAt:    *job.NextFireAt,
+	}
+
+	data, err := msg.Encode()
+	if err != nil {
+		log.Printf("[scheduler] ERROR encode message for %s: %v", job.Name, err)
+		return
+	}
+
+	if err := s.broker.Push(ctx, broker.DefaultQueue, data); err != nil {
+		log.Printf("[scheduler] ERROR enqueue job %s: %v", job.Name, err)
+		return
+	}
+
+	log.Printf("[scheduler] enqueued job %s (run %s)", job.Name, runID)
 
 	// Advance the schedule regardless of execution result.
 	// Even if the webhook failed, we don't want to re-fire the same
