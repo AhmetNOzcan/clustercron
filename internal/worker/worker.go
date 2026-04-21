@@ -20,7 +20,7 @@ func NewWorker(db *storage.DB, b *broker.Redis, executor *Executor, nodeID strin
 		db:       db,
 		broker:   b,
 		executor: executor,
-		queue:    broker.DefaultQueue,
+		queue:    broker.WorkerQueue(nodeID),
 		nodeID:   nodeID,
 	}
 }

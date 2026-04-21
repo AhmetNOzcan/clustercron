@@ -2,6 +2,8 @@ package scheduler
 
 import (
 	"clustercron/internal/broker"
+	"clustercron/internal/hashring"
+	"clustercron/internal/heartbeat"
 	"clustercron/internal/schedule"
 	"clustercron/internal/storage"
 	"clustercron/internal/worker"
@@ -13,13 +15,17 @@ import (
 type Scheduler struct {
 	db       *storage.DB
 	broker   *broker.Redis
+	hb       *heartbeat.Monitor
+	ring     *hashring.Ring
 	interval time.Duration
 }
 
-func New(db *storage.DB, broker *broker.Redis) *Scheduler {
+func New(db *storage.DB, broker *broker.Redis, hb *heartbeat.Monitor) *Scheduler {
 	return &Scheduler{
 		db:       db,
 		broker:   broker,
+		hb:       hb,
+		ring:     hashring.New(),
 		interval: 5 * time.Second,
 	}
 }
@@ -43,6 +49,14 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) tick(ctx context.Context) {
+
+	s.refreshRing(ctx)
+
+	if s.ring.Size() == 0 {
+		log.Printf("[scheduler] no live workers, skipping tick")
+		return
+	}
+
 	jobs, err := s.db.GetDueJobs(ctx, time.Now(), 100)
 	if err != nil {
 		log.Printf("[scheduler] ERROR get due jobs: %v", err)
@@ -51,6 +65,9 @@ func (s *Scheduler) tick(ctx context.Context) {
 	if len(jobs) == 0 {
 		return
 	}
+
+	log.Printf("[scheduler] found %d due job(s), %d workers in ring",
+		len(jobs), s.ring.Size())
 
 	for _, job := range jobs {
 		// Check if context is done between jobs.
@@ -61,8 +78,35 @@ func (s *Scheduler) tick(ctx context.Context) {
 	}
 }
 
+func (s *Scheduler) refreshRing(ctx context.Context) {
+	workers, err := s.hb.LiveWorkers(ctx)
+	if err != nil {
+		log.Printf("[scheduler] ERROR get live workers: %v", err)
+		return
+	}
+
+	currentMembers := s.ring.Members()
+
+	// Quick check: if the member list hasn't changed, skip the rebuild.
+	if slicesEqual(currentMembers, workers) {
+		return
+	}
+
+	log.Printf("[scheduler] ring changed: %v → %v", currentMembers, workers)
+	newRing := hashring.NewWithMembers(workers)
+	s.ring = newRing
+}
+
 func (s *Scheduler) processJob(ctx context.Context, job *storage.Job) {
 	runID := worker.BuildRunID(job)
+	targetWorker := s.ring.GetWorker(job.ID.String())
+
+	if targetWorker == "" {
+		log.Printf("[scheduler] no worker available for job %s", job.Name)
+		return
+	}
+
+	queue := broker.WorkerQueue(targetWorker)
 
 	msg := &broker.JobMessage{
 		RunID:          runID,
@@ -80,7 +124,7 @@ func (s *Scheduler) processJob(ctx context.Context, job *storage.Job) {
 		return
 	}
 
-	if err := s.broker.Push(ctx, broker.DefaultQueue, data); err != nil {
+	if err := s.broker.Push(ctx, queue, data); err != nil {
 		log.Printf("[scheduler] ERROR enqueue job %s: %v", job.Name, err)
 		return
 	}
@@ -99,4 +143,16 @@ func (s *Scheduler) processJob(ctx context.Context, job *storage.Job) {
 	if err := s.db.UpdateNextFireTime(ctx, job.ID, nextFire); err != nil {
 		log.Printf("[scheduler] ERROR update next_fire_at for %s: %v", job.Name, err)
 	}
+}
+
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
