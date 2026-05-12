@@ -15,7 +15,6 @@ type Election struct {
 	pool     *pgxpool.Pool
 	nodeID   string
 	interval time.Duration // how often to try acquiring the lock
-
 	mu       sync.Mutex
 	isLeader bool
 }
@@ -43,16 +42,14 @@ func (e *Election) setLeader(v bool) {
 func (e *Election) Run(ctx context.Context, onElected func(ctx context.Context)) {
 	log.Printf("[election] node %s joining election, trying every %s", e.nodeID, e.interval)
 	for {
-		if ctx.Err() != nil {
-			log.Printf("[election] node %s stopped", e.nodeID)
-			return
-		}
-
 		e.tryLead(ctx, onElected)
 
 		select {
 		case <-time.After(e.interval):
 		case <-ctx.Done():
+			if ctx.Err() != nil {
+				log.Printf("[election] node %s stopped", e.nodeID)
+			}
 			return
 		}
 	}
